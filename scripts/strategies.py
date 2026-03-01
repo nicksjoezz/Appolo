@@ -2,39 +2,60 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 
-def imba_algo_trend(df, sensitivity=18):
-    """
-    Pine Script Translation:
-    length = sensitivity * 10
-    high_line = ta.highest(high, length)
-    low_line = ta.lowest(low, length)
-    channel_range = high_line - low_line
-    imba_trend_line = high_line - channel_range * 0.5
-    """
+def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, rsi_filter=False, rsi_len=14, rsi_ob=70, rsi_os=30, macd_filter=False, trend_confirmation=False, bb_filter=False, vol_filter=False, trailing_sl=False):
     df = df.copy()
     length = int(max(1, sensitivity * 10))
 
-    # Use pandas rolling for high and low
+    # IMBA Base Calculation
     high_line = df['high'].rolling(window=length).max()
     low_line = df['low'].rolling(window=length).min()
     imba_trend_line = high_line - (high_line - low_line) * 0.5
 
+    is_imba_uptrend = df['close'] > imba_trend_line
+    is_imba_downtrend = df['close'] < imba_trend_line
+
+    can_long = pd.Series(True, index=df.index)
+    can_short = pd.Series(True, index=df.index)
+
+    if ema_filter:
+        df['ema'] = ta.ema(df['close'], length=ema_len)
+        can_long &= (df['close'] > df['ema'])
+        can_short &= (df['close'] < df['ema'])
+
+    if rsi_filter:
+        df['rsi'] = ta.rsi(df['close'], length=rsi_len)
+        can_long &= (df['rsi'] < rsi_ob)
+        can_short &= (df['rsi'] > rsi_os)
+
+    if macd_filter:
+        macd = ta.macd(df['close'])
+        hist_col = [c for c in macd.columns if 'MACDh' in c][0]
+        can_long &= (macd[hist_col] > 0)
+        can_short &= (macd[hist_col] < 0)
+
+    if vol_filter:
+        df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+        df['atr_sma'] = ta.sma(df['atr'], length=20)
+        can_long &= (df['atr'] > df['atr_sma'])
+        can_short &= (df['atr'] > df['atr_sma'])
+
+    if trend_confirmation:
+        imba_uptrend_count = is_imba_uptrend.rolling(3).sum()
+        imba_downtrend_count = is_imba_downtrend.rolling(3).sum()
+        buy_mask = (imba_uptrend_count == 3) & (imba_uptrend_count.shift(1) == 2) & can_long
+        sell_mask = (imba_downtrend_count == 3) & (imba_downtrend_count.shift(1) == 2) & can_short
+    else:
+        buy_mask = is_imba_uptrend & (~is_imba_uptrend.shift(1).fillna(False)) & can_long
+        sell_mask = is_imba_downtrend & (~is_imba_downtrend.shift(1).fillna(False)) & can_short
+
     signals = pd.Series(0, index=df.index)
-
-    # is_uptrend = close > imba_trend_line
-    # buy_signal = is_uptrend and not is_uptrend[1]
-    is_uptrend = df['close'] > imba_trend_line
-    buy_signal = is_uptrend & (~is_uptrend.shift(1).fillna(False))
-
-    # is_downtrend = close < imba_trend_line
-    # sell_signal = is_downtrend and not is_downtrend[1]
-    is_downtrend = df['close'] < imba_trend_line
-    sell_signal = is_downtrend & (~is_downtrend.shift(1).fillna(False))
-
-    signals[buy_signal] = 1
-    signals[sell_signal] = -1
+    signals[buy_mask] = 1
+    signals[sell_mask] = -1
 
     return signals
+
+def imba_algo_trend(df, sensitivity=18):
+    return imba_algo_trend_filtered(df, sensitivity=sensitivity, ema_filter=False, rsi_filter=False)
 
 def ema_cross_strategy(df, fast=9, slow=21):
     df = df.copy()

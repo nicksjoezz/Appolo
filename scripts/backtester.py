@@ -71,42 +71,48 @@ class Backtester:
         self.trades = []
         self.equity_curve = []
 
-        for i in range(len(df) - 1):
+        for i in range(len(df)):
+            current_high = df['high'].iloc[i]
+            current_low = df['low'].iloc[i]
             current_time = df.index[i]
-            next_open = df['open'].iloc[i+1]
-            next_high = df['high'].iloc[i+1]
-            next_low = df['low'].iloc[i+1]
-            next_time = df.index[i+1]
 
-            # Check Exit
+            # 1. Check Exit (Including intra-candle on the candle where entry might have just happened)
             if self.position != 0:
                 exit_price = None
                 exit_reason = None
 
                 if self.position == 1: # Long
-                    if next_low <= self.sl:
+                    if current_low <= self.sl:
                         exit_price = self.sl
                         exit_reason = "SL"
-                    elif next_high >= self.tp:
+                    elif current_high >= self.tp:
                         exit_price = self.tp
                         exit_reason = "TP"
                 elif self.position == -1: # Short
-                    if next_high >= self.sl:
+                    if current_high >= self.sl:
                         exit_price = self.sl
                         exit_reason = "SL"
-                    elif next_low <= self.tp:
+                    elif current_low <= self.tp:
                         exit_price = self.tp
                         exit_reason = "TP"
 
                 if exit_price:
-                    if self._close_pos(exit_price, next_time, exit_reason):
+                    if self._close_pos(exit_price, current_time, exit_reason):
                         self.equity_curve.extend([0] * (len(df) - len(self.equity_curve)))
-                        break
+                        return self._get_results()
 
-            # Check Entry (Enter at next open if signal on current bar)
-            signal = signals.iloc[i]
-            if self.position == 0 and signal != 0 and self.balance > 0:
-                self._open_pos(signal, next_open, next_time, tp_pct, sl_pct, margin_pct)
+            # 2. Check Entry Signal (Signal on bar i, Entry on open of bar i+1)
+            # If we are not in position and there is a signal
+            if self.position == 0 and i < len(df) - 1:
+                signal = signals.iloc[i]
+                if signal != 0 and self.balance > 0:
+                    next_open = df['open'].iloc[i+1]
+                    next_time = df.index[i+1]
+                    self._open_pos(signal, next_open, next_time, tp_pct, sl_pct, margin_pct)
+
+                    # 3. IMMEDIATELY check if the same candle (i+1) triggers exit
+                    # Since we are currently at index i, we'll hit this in the next iteration of the loop.
+                    # This is correct. The loop will process bar i+1 next, and step 1 will check high/low.
 
             self.equity_curve.append(self.balance)
 
@@ -118,10 +124,10 @@ class Backtester:
 
     def _get_results(self):
         if not self.trades:
-            return {"total_return_pct": 0, "n_trades": 0, "sharpe_ratio": 0, "max_drawdown_pct": 0, "final_balance": self.balance}
+            return {"total_return_pct": 0, "n_trades": 0, "sharpe_ratio": 0, "max_drawdown_pct": 0, "final_balance": self.balance, "win_rate": 0}
         trades_df = pd.DataFrame([t for t in self.trades if 'pnl' in t])
         if trades_df.empty:
-             return {"total_return_pct": 0, "n_trades": 0, "sharpe_ratio": 0, "max_drawdown_pct": 0, "final_balance": self.balance}
+             return {"total_return_pct": 0, "n_trades": 0, "sharpe_ratio": 0, "max_drawdown_pct": 0, "final_balance": self.balance, "win_rate": 0}
         total_return_pct = (self.balance - self.initial_balance) / self.initial_balance * 100
         win_rate = len(trades_df[trades_df['pnl'] > 0]) / len(trades_df)
         equity_series = pd.Series(self.equity_curve)
