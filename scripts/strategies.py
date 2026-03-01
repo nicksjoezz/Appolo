@@ -2,7 +2,7 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 
-def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, rsi_filter=False, rsi_len=14, rsi_ob=70, rsi_os=30, macd_filter=False, trend_confirmation=False, bb_filter=False, vol_filter=False, trailing_sl=False):
+def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, rsi_filter=False, rsi_len=14, rsi_ob=70, rsi_os=30, macd_filter=False, trend_confirmation=False, bb_filter=False, vol_filter=False):
     df = df.copy()
     length = int(max(1, sensitivity * 10))
 
@@ -40,11 +40,13 @@ def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, r
         can_short &= (df['atr'] > df['atr_sma'])
 
     if trend_confirmation:
+        # 3-bar confirmation
         imba_uptrend_count = is_imba_uptrend.rolling(3).sum()
         imba_downtrend_count = is_imba_downtrend.rolling(3).sum()
         buy_mask = (imba_uptrend_count == 3) & (imba_uptrend_count.shift(1) == 2) & can_long
         sell_mask = (imba_downtrend_count == 3) & (imba_downtrend_count.shift(1) == 2) & can_short
     else:
+        # Standard IMBA flip
         buy_mask = is_imba_uptrend & (~is_imba_uptrend.shift(1).fillna(False)) & can_long
         sell_mask = is_imba_downtrend & (~is_imba_downtrend.shift(1).fillna(False)) & can_short
 
