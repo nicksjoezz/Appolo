@@ -1,58 +1,47 @@
 # ALL TRADING STRATEGIES: RULES & LOGIC
 
-This document provides the full technical rules for all strategies developed for ROSE/USDT 30x leverage.
+This document provides the full technical rules for the top-performing strategies developed for ROSE/USDT 30x leverage.
 
 ---
 
-## 1. IMBA Algo Trend (The Core)
-- **Logic:** Ported from Pine Script. Calculates the 50% Fibonacci level of a high/low channel over a lookback period.
+## 1. IMBA + UT Bot (The Aggressive Winner)
+- **Logic:** Combines the IMBA macro trend with UT Bot's precise entry/exit triggers.
 - **Rules:**
-  - `Lookback = Sensitivity * 10`
-  - `Trend Line = Highest(High, Lookback) - (Highest(High, Lookback) - Lowest(Low, Lookback)) * 0.5`
-  - **Long:** Price crosses above Trend Line.
-  - **Short:** Price crosses below Trend Line.
-
-## 2. IMBA + UT Bot (Optimized Winner)
-- **Logic:** Combines IMBA macro trend with UT Bot entry/exit signals.
-- **Rules:**
-  - **Trend Filter:** Close must be above IMBA Trend Line (Sens 20).
+  - **Trend Filter:** IMBA Algo Trend (Sensitivity 20). Only enter Long if Price > IMBA Line.
   - **Entry:** UT Bot Buy Signal (Key 5, ATR 10).
-  - **Exit:**
-    - TP 10% or SL 1%.
-    - **Opposite Signal:** Close Long immediately if UT Bot Sell Signal appears.
-- **Best Use:** Long-term trend following with early exit protection.
+  - **Take Profit:** 20.0%
+  - **Stop Loss:** 1.0%
+  - **Forced Exit:** Close the position immediately if the opposite UT Bot signal (Sell) occurs, even if TP/SL hasn't been hit.
+- **Performance:** 1,783% ROI (3 Years).
+
+## 2. Filtered IMBA (The Robust Winner)
+- **Logic:** Optimized for maximum stability and win rate over long periods.
+- **Rules:**
+  - **Trend Filter:** 200-period EMA.
+  - **Momentum Filter:** DMI (DI+ > DI- for Longs).
+  - **Confirmation:** Requires 3 consecutive 1H bars in the trend direction before entry.
+  - **Take Profit:** 5.0%
+  - **Stop Loss:** 3.0%
+- **Performance:** 11,587% ROI (3 Years) | 50.21% Win Rate.
 
 ## 3. BB Width Expansion (Explosive Growth)
-- **Logic:** Targets the volatility breakout following a Bollinger Band squeeze.
+- **Logic:** Targets the volatility expansion following a Bollinger Band squeeze.
 - **Rules:**
-  - **Volatility Filter:** Bollinger Bandwidth (20, 2) must be increasing (Expansion).
-  - **Trend Filter:** ADX > 25.
-  - **Entry (Long):** Price breaks above Upper BB.
+  - **Volatility:** Bollinger Bandwidth (20, 2) must be increasing.
+  - **Trend:** ADX > 25.
+  - **Entry:** Price breaks above/below the Upper/Lower Bollinger Band.
   - **Execution:** TP 10%, SL 1.5%.
 
-## 4. RSI Momentum Scalper (High Frequency)
-- **Logic:** Captures momentum shifts in a trending environment.
+## 4. RSI Momentum Scalper
+- **Logic:** Captures rapid momentum shifts in a trending environment.
 - **Rules:**
-  - **Trend Filter:** Price above 50 EMA.
-  - **Entry (Long):** RSI (7) crosses above 50.
+  - **Trend:** Price must be above/below 50 EMA.
+  - **Trigger:** RSI (7) crosses above/below the 50 level.
   - **Execution:** TP 5%, SL 1.5%.
 
 ## 5. Aggressive Donchian Breakout
-- **Logic:** Classic range-break strategy optimized for ROSE volatility.
+- **Logic:** Classic range-break strategy.
 - **Rules:**
-  - **Entry (Long):** Price exceeds the 10-hour Highest High.
+  - **Entry:** Price breaks the 10-hour High/Low range.
   - **Filter:** ADX > 25.
   - **Execution:** TP 5%, SL 1.5%.
-
-## 6. VW-MACD (Volume Confirmed)
-- **Logic:** MACD Histogram calculated using Volume-Weighted prices.
-- **Rules:**
-  - **Entry:** MACD Histogram (12, 26, 9) crosses above 0.
-  - **Filter:** ADX > 25.
-  - **Execution:** TP 10%, SL 1.5%.
-
-## 7. Filtered IMBA (Balanced Stability)
-- **Logic:** IMBA with conservative filters for maximum drawdown protection.
-- **Rules:**
-  - Sens 20, 200 EMA Filter, 3-Bar Confirmation, DMI Alignment.
-  - **Execution:** TP 5%, SL 3%.
