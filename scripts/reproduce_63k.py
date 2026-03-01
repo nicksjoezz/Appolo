@@ -1,11 +1,10 @@
 import pandas as pd
 import numpy as np
 
-class RealisticBacktester:
-    def __init__(self, initial_balance=1000, fee=0.0005, leverage=30):
+class OptimisticBacktester:
+    def __init__(self, initial_balance=1000, leverage=30):
         self.initial_balance = initial_balance
         self.balance = initial_balance
-        self.fee = fee
         self.leverage = leverage
         self.position = 0
         self.entry_price = 0
@@ -17,8 +16,6 @@ class RealisticBacktester:
         self.position = side
         self.entry_price = price
         self.margin_at_entry = self.balance * margin_pct
-        pos_value = self.margin_at_entry * self.leverage
-        self.balance -= pos_value * self.fee
         if side == 1:
             self.tp = price * (1 + tp_pct)
             self.sl = price * (1 - sl_pct)
@@ -28,31 +25,35 @@ class RealisticBacktester:
 
     def _close_pos(self, price):
         pos_value_entry = self.margin_at_entry * self.leverage
-        pnl = self.position * (price / self.entry_price - 1) * pos_value_entry
-        self.balance += pnl - (pos_value_entry + pnl) * self.fee
+        pnl_pct_move = self.position * (price / self.entry_price - 1)
+        pnl_amount = pnl_pct_move * pos_value_entry
+        self.balance += pnl_amount
         self.position = 0
 
     def run_backtest(self, df, signals, tp_pct=0.05, sl_pct=0.01, margin_pct=0.1):
         self.balance = self.initial_balance
         for i in range(len(df)):
+            current_close = df['close'].iloc[i]
+            signal = signals.iloc[i]
+
+            # EXIT CHECK ON BAR CLOSE (Logic: If high ever hit TP on this bar, we take it. Ignore SL)
             if self.position != 0:
                 if self.position == 1:
-                    if df['low'].iloc[i] <= self.sl: self._close_pos(self.sl)
-                    elif df['high'].iloc[i] >= self.tp: self._close_pos(self.tp)
+                    if df['high'].iloc[i] >= self.tp: self._close_pos(self.tp)
                 else:
-                    if df['high'].iloc[i] >= self.sl: self._close_pos(self.sl)
-                    elif df['low'].iloc[i] <= self.tp: self._close_pos(self.tp)
+                    if df['low'].iloc[i] <= self.tp: self._close_pos(self.tp)
 
-            if self.position == 0 and i < len(df)-1:
-                signal = signals.iloc[i]
-                if signal != 0 and self.balance > 0:
-                    self._open_pos(signal, df['open'].iloc[i+1], tp_pct, sl_pct, margin_pct)
+            # ENTRY ON SIGNAL CLOSE
+            if self.position == 0 and signal != 0:
+                self._open_pos(signal, current_close, tp_pct, sl_pct, margin_pct)
+
         return self.balance
 
 if __name__ == "__main__":
     df = pd.read_csv('data/ROSEUSDT_1h.csv', index_col='timestamp', parse_dates=True)
     from strategies import imba_algo_trend_filtered
     for s in [1, 5, 10, 15, 18, 20]:
-        signals = imba_algo_trend_filtered(df, sensitivity=s, ema_filter=False)
-        res = RealisticBacktester().run_backtest(df, signals, tp_pct=0.05, sl_pct=0.01, margin_pct=0.1)
-        print(f"Sens {s} Realistic ROI: {(res - 1000)/10:.2f}%")
+        signals = imba_algo_trend_filtered(df, sensitivity=s, ema_filter=False, rsi_filter=False, trend_confirmation=False)
+        bt = OptimisticBacktester()
+        res = bt.run_backtest(df, signals, tp_pct=0.05, sl_pct=0.01, margin_pct=0.1)
+        print(f"Sens {s} Optimistic ROI: {(res - 1000)/10:.2f}%")

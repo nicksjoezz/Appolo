@@ -2,7 +2,7 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 
-def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, rsi_filter=False, rsi_len=14, rsi_ob=70, rsi_os=30, macd_filter=False, trend_confirmation=False, bb_filter=False, vol_filter=False):
+def imba_algo_trend_filtered(df, sensitivity=20, ema_filter=False, ema_len=200, rsi_filter=False, rsi_len=14, rsi_ob=70, rsi_os=30, macd_filter=False, trend_confirmation=False, bb_filter=False, vol_filter=False, adx_filter=False, adx_min=20, adx_max=40, dmi_filter=False):
     df = df.copy()
     length = int(max(1, sensitivity * 10))
 
@@ -39,14 +39,25 @@ def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, r
         can_long &= (df['atr'] > df['atr_sma'])
         can_short &= (df['atr'] > df['atr_sma'])
 
+    if adx_filter:
+        adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
+        adx = adx_df['ADX_14']
+        can_long &= (adx > adx_min) & (adx < adx_max)
+        can_short &= (adx > adx_min) & (adx < adx_max)
+
+    if dmi_filter:
+        adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
+        dmp = adx_df['DMP_14']
+        dmn = adx_df['DMN_14']
+        can_long &= (dmp > dmn)
+        can_short &= (dmn > dmp)
+
     if trend_confirmation:
-        # 3-bar confirmation
         imba_uptrend_count = is_imba_uptrend.rolling(3).sum()
         imba_downtrend_count = is_imba_downtrend.rolling(3).sum()
         buy_mask = (imba_uptrend_count == 3) & (imba_uptrend_count.shift(1) == 2) & can_long
         sell_mask = (imba_downtrend_count == 3) & (imba_downtrend_count.shift(1) == 2) & can_short
     else:
-        # Standard IMBA flip
         buy_mask = is_imba_uptrend & (~is_imba_uptrend.shift(1).fillna(False)) & can_long
         sell_mask = is_imba_downtrend & (~is_imba_downtrend.shift(1).fillna(False)) & can_short
 
@@ -54,79 +65,4 @@ def imba_algo_trend_filtered(df, sensitivity=18, ema_filter=True, ema_len=200, r
     signals[buy_mask] = 1
     signals[sell_mask] = -1
 
-    return signals
-
-def imba_algo_trend(df, sensitivity=18):
-    return imba_algo_trend_filtered(df, sensitivity=sensitivity, ema_filter=False, rsi_filter=False)
-
-def ema_cross_strategy(df, fast=9, slow=21):
-    df = df.copy()
-    df['ema_fast'] = ta.ema(df['close'], length=fast)
-    df['ema_slow'] = ta.ema(df['close'], length=slow)
-    signals = pd.Series(0, index=df.index)
-    long_mask = (df['ema_fast'] > df['ema_slow']) & (df['ema_fast'].shift(1) <= df['ema_slow'].shift(1))
-    short_mask = (df['ema_fast'] < df['ema_slow']) & (df['ema_fast'].shift(1) >= df['ema_slow'].shift(1))
-    signals[long_mask] = 1
-    signals[short_mask] = -1
-    return signals
-
-def rsi_bb_strategy(df, rsi_len=14, rsi_ob=70, rsi_os=30, bb_len=20, bb_std=2):
-    df = df.copy()
-    df['rsi'] = ta.rsi(df['close'], length=rsi_len)
-    bb = ta.bbands(df['close'], length=bb_len, std=bb_std)
-    df = pd.concat([df, bb], axis=1)
-    l_col = f'BBL_{bb_len}_{bb_std}'
-    u_col = f'BBU_{bb_len}_{bb_std}'
-    if l_col not in df.columns:
-        for col in df.columns:
-            if col.startswith(f'BBL_{bb_len}'): l_col = col
-            if col.startswith(f'BBU_{bb_len}'): u_col = col
-    signals = pd.Series(0, index=df.index)
-    long_mask = (df['rsi'] < rsi_os) & (df['close'] < df[l_col])
-    short_mask = (df['rsi'] > rsi_ob) & (df['close'] > df[u_col])
-    signals[long_mask & (~long_mask.shift(1).fillna(False))] = 1
-    signals[short_mask & (~short_mask.shift(1).fillna(False))] = -1
-    return signals
-
-def daily_high_low_breakout(df):
-    df = df.copy()
-    daily = df.resample('D').agg({'high': 'max', 'low': 'min'})
-    daily_h = daily['high'].shift(1).reindex(df.index, method='ffill')
-    daily_l = daily['low'].shift(1).reindex(df.index, method='ffill')
-    signals = pd.Series(0, index=df.index)
-    long_mask = (df['close'] > daily_h) & (df['close'].shift(1) <= daily_h.shift(1))
-    short_mask = (df['close'] < daily_l) & (df['close'].shift(1) >= daily_l.shift(1))
-    signals[long_mask] = 1
-    signals[short_mask] = -1
-    return signals
-
-def supertrend_strategy(df, length=10, multiplier=3):
-    df = df.copy()
-    st = ta.supertrend(df['high'], df['low'], df['close'], length=length, multiplier=multiplier)
-    d_col = [c for c in st.columns if c.startswith('SUPERTd')][0]
-    signals = pd.Series(0, index=df.index)
-    signals[ (st[d_col] == 1) & (st[d_col].shift(1) == -1) ] = 1
-    signals[ (st[d_col] == -1) & (st[d_col].shift(1) == 1) ] = -1
-    return signals
-
-def bb_breakout_aggressive(df, length=20, std=2):
-    df = df.copy()
-    bb = ta.bbands(df['close'], length=length, std=std)
-    df = pd.concat([df, bb], axis=1)
-    l_col = [c for c in bb.columns if c.startswith('BBL')][0]
-    u_col = [c for c in bb.columns if c.startswith('BBU')][0]
-    signals = pd.Series(0, index=df.index)
-    signals[ (df['close'] > df[u_col]) & (df['close'].shift(1) <= df[u_col].shift(1)) ] = 1
-    signals[ (df['close'] < df[l_col]) & (df['close'].shift(1) >= df[l_col].shift(1)) ] = -1
-    return signals
-
-def volatility_trend(df, length=10, vol_mult=2):
-    df = df.copy()
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=length)
-    df['sma'] = ta.sma(df['close'], length=length)
-    signals = pd.Series(0, index=df.index)
-    long_mask = (df['close'] > df['sma'] + vol_mult * df['atr'])
-    short_mask = (df['close'] < df['sma'] - vol_mult * df['atr'])
-    signals[long_mask & (~long_mask.shift(1).fillna(False))] = 1
-    signals[short_mask & (~short_mask.shift(1).fillna(False))] = -1
     return signals
