@@ -59,3 +59,31 @@ def macd_strategy(df, fast=12, slow=26, signal=9):
     signals[ (macd[h_col] > 0) & (macd[h_col].shift(1) <= 0) ] = 1
     signals[ (macd[h_col] < 0) & (macd[h_col].shift(1) >= 0) ] = -1
     return signals
+
+def bb_breakout_aggressive(df, length=20, std=2):
+    df = df.copy()
+    bb = ta.bbands(df['close'], length=length, std=std)
+    df = pd.concat([df, bb], axis=1)
+    l_col = [c for c in bb.columns if c.startswith('BBL')][0]
+    u_col = [c for c in bb.columns if c.startswith('BBU')][0]
+
+    signals = pd.Series(0, index=df.index)
+    # Long on upper BB breakout
+    signals[ (df['close'] > df[u_col]) & (df['close'].shift(1) <= df[u_col].shift(1)) ] = 1
+    # Short on lower BB breakdown
+    signals[ (df['close'] < df[l_col]) & (df['close'].shift(1) >= df[l_col].shift(1)) ] = -1
+    return signals
+
+def volatility_trend(df, length=10, vol_mult=2):
+    df = df.copy()
+    df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=length)
+    df['sma'] = ta.sma(df['close'], length=length)
+
+    signals = pd.Series(0, index=df.index)
+    # Aggressive trend: move > vol_mult * ATR
+    long_mask = (df['close'] > df['sma'] + vol_mult * df['atr'])
+    short_mask = (df['close'] < df['sma'] - vol_mult * df['atr'])
+
+    signals[long_mask & (~long_mask.shift(1).fillna(False))] = 1
+    signals[short_mask & (~short_mask.shift(1).fillna(False))] = -1
+    return signals
