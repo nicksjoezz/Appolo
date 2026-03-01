@@ -1,5 +1,40 @@
 import pandas as pd
 import pandas_ta as ta
+import numpy as np
+
+def imba_algo_trend(df, sensitivity=18):
+    """
+    Pine Script Translation:
+    length = sensitivity * 10
+    high_line = ta.highest(high, length)
+    low_line = ta.lowest(low, length)
+    channel_range = high_line - low_line
+    imba_trend_line = high_line - channel_range * 0.5
+    """
+    df = df.copy()
+    length = int(max(1, sensitivity * 10))
+
+    # Use pandas rolling for high and low
+    high_line = df['high'].rolling(window=length).max()
+    low_line = df['low'].rolling(window=length).min()
+    imba_trend_line = high_line - (high_line - low_line) * 0.5
+
+    signals = pd.Series(0, index=df.index)
+
+    # is_uptrend = close > imba_trend_line
+    # buy_signal = is_uptrend and not is_uptrend[1]
+    is_uptrend = df['close'] > imba_trend_line
+    buy_signal = is_uptrend & (~is_uptrend.shift(1).fillna(False))
+
+    # is_downtrend = close < imba_trend_line
+    # sell_signal = is_downtrend and not is_downtrend[1]
+    is_downtrend = df['close'] < imba_trend_line
+    sell_signal = is_downtrend & (~is_downtrend.shift(1).fillna(False))
+
+    signals[buy_signal] = 1
+    signals[sell_signal] = -1
+
+    return signals
 
 def ema_cross_strategy(df, fast=9, slow=21):
     df = df.copy()
@@ -51,26 +86,14 @@ def supertrend_strategy(df, length=10, multiplier=3):
     signals[ (st[d_col] == -1) & (st[d_col].shift(1) == 1) ] = -1
     return signals
 
-def macd_strategy(df, fast=12, slow=26, signal=9):
-    df = df.copy()
-    macd = ta.macd(df['close'], fast=fast, slow=slow, signal=signal)
-    h_col = [c for c in macd.columns if c.startswith('MACDh')][0]
-    signals = pd.Series(0, index=df.index)
-    signals[ (macd[h_col] > 0) & (macd[h_col].shift(1) <= 0) ] = 1
-    signals[ (macd[h_col] < 0) & (macd[h_col].shift(1) >= 0) ] = -1
-    return signals
-
 def bb_breakout_aggressive(df, length=20, std=2):
     df = df.copy()
     bb = ta.bbands(df['close'], length=length, std=std)
     df = pd.concat([df, bb], axis=1)
     l_col = [c for c in bb.columns if c.startswith('BBL')][0]
     u_col = [c for c in bb.columns if c.startswith('BBU')][0]
-
     signals = pd.Series(0, index=df.index)
-    # Long on upper BB breakout
     signals[ (df['close'] > df[u_col]) & (df['close'].shift(1) <= df[u_col].shift(1)) ] = 1
-    # Short on lower BB breakdown
     signals[ (df['close'] < df[l_col]) & (df['close'].shift(1) >= df[l_col].shift(1)) ] = -1
     return signals
 
@@ -78,12 +101,9 @@ def volatility_trend(df, length=10, vol_mult=2):
     df = df.copy()
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=length)
     df['sma'] = ta.sma(df['close'], length=length)
-
     signals = pd.Series(0, index=df.index)
-    # Aggressive trend: move > vol_mult * ATR
     long_mask = (df['close'] > df['sma'] + vol_mult * df['atr'])
     short_mask = (df['close'] < df['sma'] - vol_mult * df['atr'])
-
     signals[long_mask & (~long_mask.shift(1).fillna(False))] = 1
     signals[short_mask & (~short_mask.shift(1).fillna(False))] = -1
     return signals
