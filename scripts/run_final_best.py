@@ -3,6 +3,7 @@ import numpy as np
 import os
 import sys
 
+# Add current directory to path to allow absolute-style imports from scripts/
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from backtester import Backtester
@@ -11,16 +12,15 @@ from strategies import imba_algo_trend_filtered
 def run_final():
     data_path = os.path.join(os.path.dirname(__file__), '../data/ROSEUSDT_1h_3y.csv')
     if not os.path.exists(data_path):
-        from fetch_data import fetch_years
-        os.makedirs('data', exist_ok=True)
-        fetch_years('ROSEUSDT', '1h', years=3).to_csv(data_path)
+        print(f"Data not found. Please run scripts/fetch_data.py first.")
+        return
 
     df_1h = pd.read_csv(data_path, index_col='timestamp', parse_dates=True)
 
     # BEST ROBUST STRATEGY: Sens 20, 5% TP, 3% SL
     print("Running FINAL ROBUST strategy (SENS 20, EMA 200, DMI, TC)...")
 
-    signals = imba_algo_trend_filtered(df_1h, sensitivity=20, ema_len=200)
+    signals = imba_algo_trend_filtered(df_1h, sensitivity=20)
 
     bt = Backtester(leverage=30)
     res = bt.run_backtest(df_1h, signals, tp_pct=0.05, sl_pct=0.03, margin_pct=0.1)
