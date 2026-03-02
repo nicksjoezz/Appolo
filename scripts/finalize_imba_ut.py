@@ -9,12 +9,15 @@ from mtf_backtester import MTFBacktester
 from strategies import imba_ut_bot_strategy
 
 def finalize_imba_ut():
-    data_path = os.path.join(os.path.dirname(__file__), '../data/ROSEUSDT_1h_3y.csv')
-    if not os.path.exists(data_path):
-        print(f"Data not found. Please run scripts/fetch_data.py first.")
+    data_path_1h = os.path.join(os.path.dirname(__file__), '../data/ROSEUSDT_1h_3y.csv')
+    data_path_15m = os.path.join(os.path.dirname(__file__), '../data/ROSEUSDT_15m_3y.csv')
+
+    if not os.path.exists(data_path_1h) or not os.path.exists(data_path_15m):
+        print(f"Data not found. Please run scripts/fetch_data.py and fetch_massive_15m.py first.")
         return
 
-    df_1h = pd.read_csv(data_path, index_col='timestamp', parse_dates=True)
+    df_1h = pd.read_csv(data_path_1h, index_col='timestamp', parse_dates=True)
+    df_15m = pd.read_csv(data_path_15m, index_col='timestamp', parse_dates=True)
 
     # Winner: Sens 20, UT Key 5, ATR 10, TP 20%, SL 1%
     sensitivity = 20
@@ -25,11 +28,12 @@ def finalize_imba_ut():
     leverage = 30
     margin_pct = 0.1
 
-    print("Finalizing IMBA + UT BOT Strategy (3 Years)...")
+    print("Finalizing IMBA + UT BOT Strategy (3 Years) using 15m Precision...")
 
     signals, ut_raw = imba_ut_bot_strategy(df_1h, imba_sens=sensitivity, ut_key=ut_key, ut_atr=ut_atr)
     bt = MTFBacktester(leverage=leverage)
-    res = bt.run_backtest(df_1h, signals, df_1h, tp_pct=tp, sl_pct=sl, margin_pct=margin_pct, exit_signals=ut_raw)
+    # Use 1h for signals, 15m for precision SL/TP checking
+    res = bt.run_backtest(df_1h, signals, df_15m, tp_pct=tp, sl_pct=sl, margin_pct=margin_pct, exit_signals=ut_raw)
 
     print("\nIMBA + UT BOT RESULTS")
     print("="*30)

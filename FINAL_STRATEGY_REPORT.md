@@ -27,5 +27,10 @@ The **IMBA + UT Bot Strategy** is a high-precision configuration that uses oppos
 ## 🚀 IMPLEMENTATION
 The live trading bot for the **Filtered IMBA** strategy is ready in `trading_bot/rose_bot_v2.py`. It is pre-configured with the correct Binance decimal precision for ROSEUSDT.
 
+### **BATCH BACKTESTING**
+To evaluate the strategy in 60-day intervals (to see its performance in different market conditions):
+- Run `python3 scripts/batch_backtester.py`.
+- This will generate a summary table and save individual batch results to `batch_results_60d.csv`.
+
 ---
 **Disclaimer:** Trading with 30x leverage carries extremely high risk. These results are based on historical data and do not guarantee future performance.

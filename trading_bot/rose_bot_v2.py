@@ -4,13 +4,12 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 import logging
-from binance.client import Client
-from binance import BinanceSocketManager
+from binance import AsyncClient, BinanceSocketManager
 from binance.enums import *
 
 # --- SETTINGS ---
 SYMBOL = 'ROSEUSDT'
-TIMEFRAME = Client.KLINE_INTERVAL_1HOUR
+TIMEFRAME = '1h'
 LEVERAGE = 30
 MARGIN_PCT = 0.10
 TP_PCT = 0.05
@@ -30,16 +29,15 @@ logger = logging.getLogger()
 
 class RoseBotV2:
     def __init__(self):
-        self.client = Client(API_KEY, API_SECRET)
-        self.bsm = BinanceSocketManager(self.client)
-        self.klines = []
+        self.client = None
+        self.bsm = None
         self.pos_side = None # 'LONG', 'SHORT', or None
         self.tick_size = None
         self.step_size = None
 
-    def get_precision(self):
+    async def get_precision(self):
         try:
-            info = self.client.futures_exchange_info()
+            info = await self.client.futures_exchange_info()
             symbol_info = next(i for i in info['symbols'] if i['symbol'] == SYMBOL)
 
             price_filter = next(f for f in symbol_info['filters'] if f['filterType'] == 'PRICE_FILTER')
@@ -55,9 +53,9 @@ class RoseBotV2:
     def round_step(self, value, step):
         return round(value - (value % step), 8)
 
-    def fetch_initial_data(self):
+    async def fetch_initial_data(self):
         logger.info("Fetching initial historical data...")
-        bars = self.client.futures_klines(symbol=SYMBOL, interval=TIMEFRAME, limit=500)
+        bars = await self.client.futures_klines(symbol=SYMBOL, interval=TIMEFRAME, limit=500)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base', 'taker_quote', 'ignore'])
         df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
         df = df.astype(float)
@@ -97,16 +95,20 @@ class RoseBotV2:
 
     async def run(self):
         logger.info("Initializing RoseBot V2...")
-        self.get_precision()
-        self.client.futures_change_leverage(symbol=SYMBOL, leverage=LEVERAGE)
+        self.client = await AsyncClient.create(API_KEY, API_SECRET)
+        self.bsm = BinanceSocketManager(self.client)
+
+        await self.get_precision()
+        await self.client.futures_change_leverage(symbol=SYMBOL, leverage=LEVERAGE)
 
         # Initial State
-        df = self.fetch_initial_data()
+        df = await self.fetch_initial_data()
 
         socket = self.bsm.kline_socket(symbol=SYMBOL, interval=TIMEFRAME)
         async with socket as stream:
             while True:
                 res = await stream.recv()
+                if not res: continue
                 k = res['k']
 
                 # We only act on CANDLE CLOSE
@@ -127,7 +129,7 @@ class RoseBotV2:
                     long_sig, short_sig, exit_long, exit_short = self.calculate_signals(df)
 
                     # Check current position
-                    pos = self.client.futures_position_information(symbol=SYMBOL)
+                    pos = await self.client.futures_position_information(symbol=SYMBOL)
                     sym_pos = next(p for p in pos if p['symbol'] == SYMBOL)
                     current_qty = float(sym_pos['positionAmt'])
 
@@ -138,14 +140,14 @@ class RoseBotV2:
                     # 1. Exit Logic
                     if self.pos_side == 'LONG' and exit_long:
                         logger.info("Trend reversal. Closing LONG.")
-                        self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=ORDER_TYPE_MARKET, quantity=abs(current_qty))
+                        await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=ORDER_TYPE_MARKET, quantity=abs(current_qty))
                     elif self.pos_side == 'SHORT' and exit_short:
                         logger.info("Trend reversal. Closing SHORT.")
-                        self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=ORDER_TYPE_MARKET, quantity=abs(current_qty))
+                        await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=ORDER_TYPE_MARKET, quantity=abs(current_qty))
 
                     # 2. Entry Logic
                     if self.pos_side is None:
-                        balances = self.client.futures_account_balance()
+                        balances = await self.client.futures_account_balance()
                         usdt_balance = float(next(b for b in balances if b['asset'] == 'USDT')['balance'])
 
                         price = float(k['c'])
@@ -154,19 +156,19 @@ class RoseBotV2:
 
                         if long_sig:
                             logger.info(f"Opening LONG. Qty: {qty}")
-                            self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=ORDER_TYPE_MARKET, quantity=qty)
+                            await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=ORDER_TYPE_MARKET, quantity=qty)
                             # TP/SL
-                            self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
+                            await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
                                                             stopPrice=self.round_step(price * (1+TP_PCT), self.tick_size), closePosition=True)
-                            self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                            await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=FUTURE_ORDER_TYPE_STOP_MARKET,
                                                             stopPrice=self.round_step(price * (1-SL_PCT), self.tick_size), closePosition=True)
                         elif short_sig:
                             logger.info(f"Opening SHORT. Qty: {qty}")
-                            self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=ORDER_TYPE_MARKET, quantity=qty)
+                            await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_SELL, type=ORDER_TYPE_MARKET, quantity=qty)
                             # TP/SL
-                            self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
+                            await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
                                                             stopPrice=self.round_step(price * (1-TP_PCT), self.tick_size), closePosition=True)
-                            self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=FUTURE_ORDER_TYPE_STOP_MARKET,
+                            await self.client.futures_create_order(symbol=SYMBOL, side=SIDE_BUY, type=FUTURE_ORDER_TYPE_STOP_MARKET,
                                                             stopPrice=self.round_step(price * (1+SL_PCT), self.tick_size), closePosition=True)
 
 if __name__ == "__main__":
