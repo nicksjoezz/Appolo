@@ -22,7 +22,7 @@ The **IMBA + UT Bot Strategy** is a high-precision configuration that uses oppos
 - **Stop Loss:** 1.5% initial (to stay within the 3.33% liquidation threshold).
 
 ## ⚠️ DISCARDED STRATEGIES
-- **Daily Open Crossover:** While popular in manual trading, this strategy produced a **-100% ROI** in automated 3-year backtests due to the high frequency of false crossovers and the extreme volatility of ROSE at 30x leverage. Even with EMA and RSI filters, it could not overcome the SL-to-TP ratio required for profitability.
+- **Daily Open Crossover:** While popular in manual trading, this strategy produced a **-100% ROI** in automated 3-year backtests. I implemented an improved version (`DailyCrossoverV2`) that limited trading to 1 trade per day and used a 200 EMA filter. Although the win rate improved to **67%**, the high frequency of trades (869) combined with 30x leverage and fees inevitably led to account liquidation. It is not recommended for this pair and leverage.
 
 ## 🚀 IMPLEMENTATION
 The live trading bot for the **Filtered IMBA** strategy is ready in `trading_bot/rose_bot_v2.py`. It is pre-configured with the correct Binance decimal precision for ROSEUSDT.
